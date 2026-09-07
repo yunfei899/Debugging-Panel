@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$SessionPath
@@ -6,16 +6,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $session = Get-Content -Raw -LiteralPath $SessionPath | ConvertFrom-Json
-$dssPath = [string]$session.DssPath
-$dssArguments = @($session.DssArguments | ForEach-Object { [string]$_ })
+$backendPath = Join-Path $PSScriptRoot 'IarGdbSession.ps1'
+if ($session.BackendPath) { $backendPath = [string]$session.BackendPath }
 
-if (-not (Test-Path -LiteralPath $dssPath -PathType Leaf)) {
-    throw "DSS launcher does not exist: $dssPath"
-}
-if ($dssArguments.Count -eq 0) {
-    throw 'The shared debug session does not contain DSS arguments.'
+if (-not (Test-Path -LiteralPath $backendPath -PathType Leaf)) {
+    throw "Shared debug backend does not exist: $backendPath"
 }
 
-& $dssPath @dssArguments
+& $backendPath -SessionPath $SessionPath
 exit $LASTEXITCODE
-
