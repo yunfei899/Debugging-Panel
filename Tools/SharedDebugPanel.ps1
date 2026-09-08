@@ -63,8 +63,9 @@ $script:pendingWrites = @{}
         </StackPanel>
         <WrapPanel Grid.Row="1" HorizontalAlignment="Right" Margin="0,8,0,0">
           <Button Name="BuildButton" Content="IAR 编译下载/BRG" Margin="5,0" Padding="16,5" ToolTip="编译、下载并执行 Break → Reset → Go"/>
-          <Button Name="ConnectButton" Content="连接调试" Margin="5,0" Padding="16,5"/>
+          <Button Name="ConnectButton" Content="下载并调试" Margin="5,0" Padding="16,5"/>
           <Button Name="SuspendButton" Content="中断 Break" Margin="5,0" Padding="16,5"/>
+          <Button Name="RestartButton" Content="重启 Restart" Margin="5,0" Padding="16,5" ToolTip="复位目标并保持暂停；不编译、不下载"/>
           <Button Name="ResumeButton" Content="运行 Go" Margin="5,0" Padding="16,5"/>
           <Button Name="SnapshotButton" Content="刷新变量" Margin="5,0" Padding="16,5"/>
           <Button Name="StopButton" Content="断开调试" Margin="5,0" Padding="16,5"/>
@@ -137,7 +138,7 @@ $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $names = @(
     'StateText', 'TargetText', 'BackendText', 'StopText', 'BuildText', 'DownloadText',
-    'BuildButton', 'ConnectButton', 'ResumeButton', 'SuspendButton', 'SnapshotButton', 'StopButton',
+    'BuildButton', 'ConnectButton', 'ResumeButton', 'RestartButton', 'SuspendButton', 'SnapshotButton', 'StopButton',
     'WatchBox', 'WatchButton', 'ExpressionGrid', 'ReadButton', 'SetButton', 'BreakpointBox',
     'AddBreakpointButton', 'BreakpointIdBox', 'RemoveBreakpointButton', 'BreakpointListBox', 'EventsBox'
 )
@@ -248,7 +249,7 @@ function Refresh-Display {
         $StateText.Foreground = [Windows.Media.Brushes]::Gray
         $TargetText.Text = "目标：$([string]$settings.TargetDevice) / $([string]$settings.HardwareInterface)"
         $BackendText.Text = '后台：未启动'
-        $ConnectButton.Content = '连接'
+        $ConnectButton.Content = '下载并调试'
         return
     }
 
@@ -273,9 +274,9 @@ function Refresh-Display {
     }
     $TargetText.Text = "目标：$([string]$script:session.TargetDevice) / $([string]$script:session.HardwareInterface) / $([string]$script:session.GdbServerHost):$([string]$script:session.GdbServerPort)"
     $BackendText.Text = "后台：$([string]$script:session.Backend)"
-    if ($state -eq 'DISCONNECTED') { $ConnectButton.Content = '重新连接' }
+    if ($state -eq 'DISCONNECTED') { $ConnectButton.Content = '下载并调试' }
     elseif ($state -in @('RUNNING', 'HALTED')) { $ConnectButton.Content = '已连接' }
-    else { $ConnectButton.Content = '连接' }
+    else { $ConnectButton.Content = '下载并调试' }
 
     $allLines = @(Get-SessionEvents)
     $lines = @($allLines | Select-Object -Last 250)
@@ -398,24 +399,22 @@ $ConnectButton.Add_Click({
             Get-Process -Id ([int]$script:session.ProcessId) -ErrorAction SilentlyContinue
         } else { $null }
 
-        if ($sessionProcess -and $currentStatus -match '^DISCONNECTED') {
-            [void](Send-DebugCommand 'RECONNECT')
-        }
-        elseif ($sessionProcess -and $currentStatus -match '^(RUNNING|HALTED|STARTING)') {
+        if ($sessionProcess -and $currentStatus -match '^(RUNNING|HALTED|STARTING|DISCONNECTED|RESTARTING|UNKNOWN)') {
             [System.Windows.MessageBox]::Show('共享调试会话已经存在。', '共享调试') | Out-Null
         }
         else {
             $answer = [System.Windows.MessageBox]::Show(
-                "连接 J-Link 可能暂停 CPU。当前配置目标为 $([string]$settings.TargetDevice)、接口为 $([string]$settings.HardwareInterface)，请确认与实际线缆一致；同时确认 IAR/C-SPY Debug 已断开。",
-                '连接共享调试', 'YesNo', 'Warning')
+                "下载现有 OUT（不编译），执行工程初始化并暂停进入调试。当前配置目标为 $([string]$settings.TargetDevice)、接口为 $([string]$settings.HardwareInterface)，请确认与实际线缆一致；同时确认 IAR/C-SPY Debug 已断开。",
+                '下载并调试', 'YesNo', 'Warning')
             if ($answer -eq 'Yes') {
-                & $launcherPath -ProjectRoot $ProjectRoot -AllowHardware -NoPanel
+                & $launcherPath -ProjectRoot $ProjectRoot -AllowHardware -AllowProgramLoad -LoadProgram -NoPanel
             }
         }
     }
     catch { [System.Windows.MessageBox]::Show($_.Exception.Message, '连接失败') | Out-Null }
 })
 
+$RestartButton.Add_Click({ [void](Send-DebugCommand 'RESTART') })
 $ResumeButton.Add_Click({ [void](Send-DebugCommand 'RESUME') })
 $SuspendButton.Add_Click({ [void](Send-DebugCommand 'SUSPEND') })
 $SnapshotButton.Add_Click({ [void](Send-DebugCommand 'SNAPSHOT') })
@@ -483,7 +482,7 @@ $BreakpointListBox.Add_SelectionChanged({
 })
 $StopButton.Add_Click({
     $answer = [System.Windows.MessageBox]::Show(
-        '停止共享后台并释放 J-Link？如果 CPU 正在运行，后台会先请求暂停再断开。',
+        '释放调试连接并让目标独立运行？不会主动暂停、复位或下载。',
         '断开共享调试', 'YesNo', 'Warning')
     if ($answer -eq 'Yes') { [void](Send-DebugCommand 'STOP') }
 })

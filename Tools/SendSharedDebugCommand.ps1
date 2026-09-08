@@ -38,8 +38,17 @@ if ($session.ProcessId) {
     }
 }
 
+function Read-SharedStatus([string]$Path) {
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        try { return ((Get-Content -Raw -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop) -join '').Trim() }
+        catch [IO.IOException] {
+            if ($attempt -eq 19) { throw }
+            Start-Sleep -Milliseconds 25
+        }
+    }
+}
 $status = if (Test-Path -LiteralPath $session.StatusPath -PathType Leaf) {
-    (Get-Content -Raw -LiteralPath $session.StatusPath -Encoding UTF8).Trim()
+    Read-SharedStatus $session.StatusPath
 }
 else { '' }
 if ($status.StartsWith('STOPPED') -or $status.StartsWith('ERROR')) {
@@ -57,7 +66,7 @@ Move-Item -LiteralPath $temporaryPath -Destination $commandPath
 if ($WaitMs -gt 0) { Start-Sleep -Milliseconds $WaitMs }
 
 if (Test-Path -LiteralPath $session.StatusPath -PathType Leaf) {
-    Get-Content -Raw -LiteralPath $session.StatusPath -Encoding UTF8
+    Read-SharedStatus $session.StatusPath
 }
 if (Test-Path -LiteralPath $session.EventsPath -PathType Leaf) {
     Get-Content -LiteralPath $session.EventsPath -Encoding UTF8 -Tail 8

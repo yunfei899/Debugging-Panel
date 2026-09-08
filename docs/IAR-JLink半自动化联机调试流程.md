@@ -133,3 +133,13 @@ IarGdbSession.ps1 顺序执行并写 events.log
 静态识别和配置只证明文件、字段及脚本能被正确解析。IAR 编译、C-SPY 下载、J-Link 连接、变量读取、断点命中、断点恢复和持续运行分别记录结果，未做的保持未验证。
 
 `LOADPROGRAM OK` 不证明全部断点恢复，`RUNNING` 不证明控制程序正常，旧工程的成功记录也不证明新目标已经验证。后台退出、状态停止刷新或变量持续失败时立即报告监视失效；未经指令不自动 Resume、复位、写值、清断点、重新烧录或断开。
+
+## 当前面板命令语义
+
+- 下载并调试：StartSharedDebug -AllowHardware -AllowProgramLoad -LoadProgram -NoPanel；只下载现有 OUT，不构建。C-SPY 初始化后共享接管暂停。
+- STOP：运行中发送 -target-disconnect；暂停时先 -exec-continue。成功释放后退出子进程；失败保留会话，不误报已断开。不发送 interrupt/reset。关闭后不再监视，独立运行和活动断点的释放需按目标验收。
+- RESTART：运行中先暂停，monitor reset、monitor halt，检查线程状态与 PC；成功保持暂停，失败为 UNKNOWN。不会执行 C-SPY 项目宏，不能保证停在 main。
+- 状态与日志：补充 RESTARTING、UNKNOWN、GDB_STOP_RECORD、DETACH REQUESTED/OK 和 RESTART START/OK/ERROR。保留完整停止信号以便区分故障。
+- Windows PowerShell 5.1：GDB 标准输入采用无 BOM UTF-8；状态替换使用 NullString.Value；空日志与状态文件占用须容错。
+
+本机安装路径、具体探针和验证快照不作为模板默认事实；以目标自己的适配记录为准。

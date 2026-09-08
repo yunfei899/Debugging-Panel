@@ -50,7 +50,7 @@ function Write-Status([string]$Value) {
         try {
             [IO.File]::WriteAllText($temporaryPath, $Value, $utf8NoBom)
             if ([IO.File]::Exists($statusPath)) {
-                [IO.File]::Replace($temporaryPath, $statusPath, $null)
+                [IO.File]::Replace($temporaryPath, $statusPath, [NullString]::Value)
             }
             else {
                 [IO.File]::Move($temporaryPath, $statusPath)
@@ -109,7 +109,7 @@ function ConvertTo-ProcessArgumentString([string[]]$Arguments) {
 
 function Read-ChildLog([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
-    return (Get-Content -Raw -LiteralPath $Path -ErrorAction SilentlyContinue).Trim()
+    return ((Get-Content -Raw -LiteralPath $Path -ErrorAction SilentlyContinue) -join '').Trim()
 }
 
 function Get-TcpPortOwner {
@@ -221,6 +221,8 @@ function Start-Gdb {
 
     $script:gdbProcess = New-Object Diagnostics.Process
     $script:gdbProcess.StartInfo = $startInfo
+    # .NET Framework creates StandardInput using Console.InputEncoding and may emit its BOM immediately.
+    [Console]::InputEncoding = New-Object Text.UTF8Encoding($false)
     $started = $script:gdbProcess.Start()
     if (-not $started) { throw 'GDB process failed to start.' }
     if ($script:gdbProcess.HasExited) {
@@ -287,6 +289,7 @@ function Process-MiLine([string]$Line) {
     }
 
     if ($Line -match '^\*stopped') {
+        Write-Event ("GDB_STOP_RECORD $Line")
         $reason = if ($Line -match 'reason="([^"]+)"') { $Matches[1] } else { 'unknown' }
         $breakpointId = if ($Line -match 'bkptno="([^"]+)"') { $Matches[1] } else { '' }
         $pc = if ($Line -match 'frame=.*?addr="([^"]+)"') { $Matches[1] } else { '' }
@@ -518,10 +521,47 @@ function Stop-Children {
     $script:jlinkProcessId = $null
 }
 
+function Restart-Target {
+    if ($script:targetState -notin @('HALTED', 'RUNNING')) { throw 'Restart requires a connected target.' }
+    Write-Event 'RESTART START mode=reset-and-halt'
+    try {
+        if ($script:targetState -eq 'RUNNING') {
+            [void](Invoke-MiCommand '-exec-interrupt')
+            $deadline = (Get-Date).AddSeconds(5)
+            while ($script:targetState -ne 'HALTED' -and (Get-Date) -lt $deadline) {
+                Drain-MiQueue
+                Start-Sleep -Milliseconds 20
+            }
+            if ($script:targetState -ne 'HALTED') { throw 'Target did not halt before restart.' }
+        }
+        $script:targetState = 'RESTARTING'
+        Publish-Status
+        [void](Invoke-MiCommand '-interpreter-exec console "monitor reset"' -TimeoutMs 30000)
+        [void](Invoke-MiCommand '-interpreter-exec console "monitor halt"')
+        $reply = Invoke-MiCommand '-thread-info'
+        if ($reply.Record -notmatch 'state="stopped"' -or $reply.Record -match 'state="running"') { throw 'Restart did not confirm a stopped thread.' }
+        $script:targetState = 'HALTED'
+        $pc = Invoke-MiCommand '-data-evaluate-expression "$pc"'
+        Write-Event ("RESTART OK target=halted PC=" + (Get-MiValue $pc.Record))
+        Publish-Status
+    }
+    catch {
+        $script:targetState = 'UNKNOWN'
+        Write-Event ("RESTART ERROR " + (Get-CleanText $_.Exception.Message))
+        Publish-Status
+        throw
+    }
+}
+
 function Execute-DebugCommand([string]$Command) {
     $text = $Command.Trim()
     if ([string]::IsNullOrWhiteSpace($text)) { return }
     $upper = $text.ToUpperInvariant()
+
+    if ($upper -eq 'RESTART') {
+        Restart-Target
+        return
+    }
 
     if ($upper -eq 'RESUME') {
         $reply = Invoke-MiCommand '-exec-continue' -AllowFailure
@@ -566,12 +606,18 @@ function Execute-DebugCommand([string]$Command) {
     }
 
     if ($upper -eq 'STOP') {
-        if ($script:targetState -eq 'RUNNING') {
-            $script:manualStopPending = $true
-            [void](Invoke-MiCommand '-exec-interrupt' -AllowFailure)
+        # Close the remote connection before disposing either process. Never interrupt here.
+        Write-Event 'DETACH REQUESTED mode=continue'
+        if ($script:targetState -eq 'HALTED') {
+            [void](Invoke-MiCommand '-exec-continue')
         }
+        elseif ($script:targetState -ne 'RUNNING') { throw 'Cannot release target with unknown execution state.' }
+        $detachCommand = '-target-disconnect'
+        $reply = Invoke-MiCommand $detachCommand -AllowFailure
+        if (-not $reply.Succeeded) { throw "Detach failed; session retained: $($reply.Message)" }
+        $script:targetState = 'DISCONNECTED'
+        Write-Event 'DETACH OK target=released'
         Write-Status 'STOPPING'
-        Write-Event 'STOP REQUESTED'
         $script:keepRunning = $false
         return
     }

@@ -313,7 +313,13 @@ try {
     while ((Get-Date) -lt $deadline) {
         $status = ''
         if (Test-Path -LiteralPath $statusPath -PathType Leaf) {
-            $status = (Get-Content -Raw -LiteralPath $statusPath -Encoding UTF8).Trim()
+            try {
+                $status = ((Get-Content -Raw -LiteralPath $statusPath -Encoding UTF8 -ErrorAction Stop) -join '').Trim()
+            }
+            catch [IO.IOException] {
+                Start-Sleep -Milliseconds 100
+                continue
+            }
             if ($status.StartsWith('ERROR')) {
                 $detail = if ($status -match ';message=(.*)$') { $Matches[1] } else { $status }
                 throw "Shared debug backend failed to start: $detail"
@@ -325,8 +331,8 @@ try {
         }
         $process.Refresh()
         if ($process.HasExited) {
-            $stderr = if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { (Get-Content -Raw -LiteralPath $stderrPath -Encoding UTF8).Trim() } else { '' }
-            $stdout = if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { (Get-Content -Raw -LiteralPath $stdoutPath -Encoding UTF8).Trim() } else { '' }
+            $stderr = if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { ((Get-Content -Raw -LiteralPath $stderrPath -Encoding UTF8) -join '').Trim() } else { '' }
+            $stdout = if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { ((Get-Content -Raw -LiteralPath $stdoutPath -Encoding UTF8) -join '').Trim() } else { '' }
             $detail = @($stderr, $stdout) | Where-Object { $_ } | Select-Object -First 1
             if ($status) {
                 throw "Shared debug backend exited before becoming ready: $status"
@@ -340,7 +346,7 @@ try {
     if (-not $backendReady) {
         throw "Timed out waiting for the shared debug backend. See $stderrPath and $eventsPath."
     }
-    $finalStatus = (Get-Content -Raw -LiteralPath $statusPath -Encoding UTF8).Trim()
+    $finalStatus = $status
     if ($finalStatus.StartsWith('ERROR')) { throw "Shared debug backend failed to start: $finalStatus" }
 
     if (-not $NoPanel) {

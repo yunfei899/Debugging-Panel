@@ -57,13 +57,13 @@ J-Link GDB Server ←→ arm-none-eabi-gdb/MI ←→ 面板和 AI 的命令队�
 打开共享调试面板.bat
 ```
 
-此操作只打开面板，不连接硬件。点击“连接调试”后，面板会要求确认设备安全并启动一个共享后台。命令行等价操作：
+此操作只打开面板，不连接硬件。点击“下载并调试”并确认后，使用现有 OUT 下载，不重新编译；执行工程初始化，接管后保持暂停。已有会话时先断开，不能并行启动第二个后台。命令行等价操作：
 
 ```powershell
-.\Tools\StartSharedDebug.ps1 -AllowHardware
+.\Tools\StartSharedDebug.ps1 -AllowHardware -AllowProgramLoad -LoadProgram -NoPanel
 ```
 
-连接可能导致 CPU 暂停。连接成功后，顶部状态通常为 `HALTED` 或 `RUNNING`；目标失联时为 `DISCONNECTED`。重新连接按钮只会尝试复用当前后台，不会另起第二个 J-Link Server。
+下载宏可能复位、初始化和运行 CPU；共享接管完成后保持 HALTED。仅附加、不下载的高级命令仍是 `StartSharedDebug.ps1 -AllowHardware`，它不是面板“下载并调试”的行为，也不会将新编译结果写入芯片。
 
 ## 4. IAR 编译下载/BRG
 
@@ -138,7 +138,7 @@ machmode
 .\Tools\SendSharedDebugCommand.ps1 'STOP'
 ```
 
-后台会在释放 J-Link 前尝试暂停正在运行的 CPU，然后退出 GDB 和 J-Link GDB Server。关闭面板窗口本身不会结束后台会话；如果还要继续本轮调试，不要发送 `STOP`。
+后台运行中通过 `-target-disconnect` 关闭远程连接；若已暂停则先恢复运行，再释放连接并退出 GDB/Server。不主动暂停、复位或下载。失败时保留会话并报错；独立运行效果需现场验证。关闭面板窗口不会结束后台会话。
 
 ## 8. 状态和日志
 
@@ -164,3 +164,11 @@ machmode
 - 所选 J-Link GDB Server 必须支持目标器件，GDB 必须能解析本工程 IAR 输出的符号。外部 Flash 的下载由 IAR 配置和宏承担，不能用共享连接成功代替下载验证。
 - `HALTED`/`RUNNING` 是调试器状态，不等同于业务程序正常；若 PC、寄存器异常或通信失效，应先分析日志，不要反复 Go。
 - `Tools/AutoDebugHold.js` 已停用，不能再作为 CCS/DSS 入口运行。
+
+## 重启 Restart（复位后暂停）
+
+点击“重启 Restart”向同一共享后台提交 RESTART。运行中先中断，随后通过 J-Link 执行 monitor reset、monitor halt，确认线程停止并记录 PC；不会编译、下载或自动 Go，保留当前断点和监视列表。失败记录 RESTART ERROR，目标状态为 UNKNOWN，不能视为复位成功。
+
+这是 J-Link 的复位后暂停功能，不执行 IAR C-SPY 的 execUserReset 宏。本工程 IAR 宏会运行引导流程至 0x00802000，两者并非等效；复位后可能停在芯片启动代码，不能保证直接停在 main。使用前应确保机械现场允许复位。
+
+新增按钮需要重新打开面板；新增命令需要下一次重新建立共享后台才生效。旧后台不会热加载脚本。每个目标需单独验证 Restart 的停止位置及后续运行；不可把命令成功当作应用初始化完成。

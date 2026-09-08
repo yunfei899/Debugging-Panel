@@ -70,7 +70,7 @@ J-Link GDB Server ── arm-none-eabi-gdb/MI  常驻实时会话
 | `CspyGeneralSettings` / `CspyDriverSettings` | 示例为 `prj/iar/settings/HC_SXL.Debug.general.xcl` / `.driver.xcl`；核对内部绝对路径、驱动、器件、接口和宏引用。 |
 | `MacroFile` | 示例为 `prj/iar/startup/spi/RZT1_init_boot.mac`；必须与实际 `.xcl` 引用相符。 |
 | `IarRoot` / `IarBuild` / `CspyBat` | 由本机安装和目标所需工具版本确定，不照搬 `C:\software\IAR`。 |
-| `Gdb` / `JLinkGdbServer` | 由本机可用版本确定；代码模板示例使用 J-Link V9.74 目录，不沿用旧文档 V6.10g 路径。 |
+| `Gdb` / `JLinkGdbServer` | 按本机安装及目标联机验证确定；模板版本仅为示例。新版、旧版都需验证连接、运行后暂停和变量读取，不根据版本号认定兼容。 |
 | `TargetDevice` / `JLinkDevice` | 示例为精确器件 `R7S910002`；`JLinkDevice` 非空时按精确器件连接，`JLinkCpu` 仅为空时后备。 |
 | `HardwareInterface` / `JLinkSpeedKHz` / `JLinkSerialNumber` | 示例为 SWD / 1000 / 空；按目标配置和实际探针核对。 |
 | `GdbServerHost` / `GdbServerPort` | 示例为 `127.0.0.1` / `2331`；检查占用，不结束其他工程会话抢占。 |
@@ -153,3 +153,9 @@ J-Link GDB Server ── arm-none-eabi-gdb/MI  常驻实时会话
 本分支的持续共享实现不等于对所有目标完成稳定性验收。下载成功、首次连接、断点命中、暂停后恢复和持续运行应分别验证；只有日志支持的步骤才能标为通过。出现后台退出、无效寄存器或状态停止刷新，应报告监视失效，不反复 Go。
 
 新目标的验证记录使用自己的 VCS、配置、符号及现场结果。来源样例和模板提交说明不作为新工程的验收依据。
+
+## 模板与目标适配记录
+
+IAR-Project 模板提交通用脚本、三份操作/迁移/实现文档和协作规则。目标工程的适配记录（本机绝对路径、探针序列号、产物哈希、分支提交和现场日志）留在目标本地，不复制到模板；可在目标的 .git/info/exclude 中忽略。可复用问题提炼为通用规则，不携带现场数据。
+
+迁移后核验新按钮：下载并调试使用现有 OUT，初始化后接管暂停；断开时运行中关闭远程连接，暂停时先恢复运行，不先停核；Restart 为 J-Link 复位暂停，不等同于 IAR 专用宏。旧后台不能热加载脚本，更新后需在用户授权范围内重新建立会话。
