@@ -1,0 +1,31 @@
+// Loaded into the existing IAR C-SPY session. No target firmware is changed.
+// @REV@ is replaced with the content hash by Invoke-IarSession.ps1.
+IarCoopEvaluate_@REV@(expression, outputFile)
+{
+  __var file;
+  __var value;
+  __var error;
+  __var line;
+  __var column;
+  __var source;
+  file = __openFile(outputFile, "w");
+  if (!file) return 1;
+  if (expression == "__iar_source_position__")
+  {
+    line = 0;
+    column = 0;
+    source = __sourcePosition(&line, &column);
+    __fmessage file, "error=0\nvalue=", source, ":", line, ":", column, "\n";
+    error = 0;
+  }
+  else
+  {
+    value = 0;
+    error = __evaluate(expression, &value);
+    __fmessage file, "error=", error, "\n";
+    if (error == 0) __fmessage file, "value=", value, "\n";
+  }
+  __fmessage file, "complete=1\n";
+  __closeFile(file);
+  return error;
+}
