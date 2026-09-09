@@ -14,7 +14,7 @@ $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 # IAR 负责生成带调试信息的 ELF/OUT，实时共享会话由 J-Link GDB Server
 # 和 arm-none-eabi-gdb 共同持有；面板和 AI 只向同一个命令队列提交操作。
 $iarRoot = 'C:\software\IAR'
-$gdbRoot = 'C:\software\CCS\ccs\tools\compiler\gcc-arm-none-eabi-7-2017-q4-major-win32'
+$gdbRoot = 'C:\Program Files (x86)\Arm\GNU Toolchain mingw-w64-i686-arm-none-eabi'
 $jlinkRoot = 'C:\Program Files\SEGGER\JLink_V974'
 
 $projectRelative = 'prj\iar\HC_SXL.ewp'
